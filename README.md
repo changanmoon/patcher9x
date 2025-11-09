@@ -26,7 +26,7 @@ patcher9x -cputest
 
 ## Memory limit patch
 
-Windows 9x cannot work with more than about ~512 MB of RAM. There is no strict barrier, but due bugs in FAT driver (`VCACHE.VXD`) more memory causes that cache won't fit to system memory space and overwriting memory of another drivers. With more memory is more change to hit something important. There also few other bugs in `VMM.VXD` loader and itself `VMM.VXD`.
+Windows 9x cannot work with more than about ~512 MB of RAM. There is no strict barrier, but due bugs in FAT driver (`VCACHE.VXD`) more memory causes that cache won't fit to system memory space and overwriting memory of another drivers. With more memory is more change to hit something important. There also few other bugs in `VMM.VXD` loader and itself in `VMM32.VXD`.
 
 ![More RAM than system handle](/doc/memory.gif)
 
@@ -58,7 +58,9 @@ Some updates install newer version of some files, for example `VMM.VXD`: Q242161
 
 ## Updating
 
-If you already applied this patch, you don't to need install patcher update - currently all the changes are for the patcher program, the patched code is the same. If you want to overwrite previous patches, you can safely run the patcher again and it automatically determines which files are suitable for patching and which are already patched.
+Download newest version and run it. Program automatically determine when needs  to replace patches with newer ones. Currently there are following updates:
+- 0.9.90: updated Dirty control registry patch (required for every 32 bit only CPU)
+- 0.8.50: updated Windows 98/98 SE TLB patch (stability)
 
 ## Download
 
@@ -83,10 +85,45 @@ Patch will be run in interactive mode and the default strategy (*patch files, VM
 
 ![Successfuly working Windows 98 - AMD](/doc/amd-5-3500u.png)
 
+## Uninstall
+
+Run Patcher9x with `-reverse` argument. For example, boot from boot floppy and type:
+```
+patch9x -reverse
+```
+
+You can also `-select`or `-unselect` argument to choose what patches remove, for example remove only memory patch:
+
+```
+patch9x -reverse -select mem
+```
+
+Or remove all patches and keep only TLB patch:
+
+```
+patch9x -reverse -unselect tlb
+```
+
 ## Operation modes
 
 ### Interactive mode
-This is default mode, the program asking questions and user answear. You can just double click on EXE (or type `patch9x` to DOS command prompt) and program guide to you in patching process. For Linux build, the help is prinded if no arguments are given (default behaviour for UNIX programs) so you need specify *path*.
+This is default mode, the program asking questions and user answer. You can just double click on EXE (or type `patch9x` to DOS command prompt) and program guide to you in patching process. For Linux build, the help is prinded if no arguments are given (default behaviour for UNIX programs) so you need specify *path*.
+
+Program automatically ties apply all patches, but if you wish apply only some, run program from command line with `-select` arguments following comma separated patches:
+
+- tlb - TLB patches
+- speeddrv - CPU speed patch fix for system VXDs
+- speedndis - CPU speed patch for NDIS.VXD/NDIS.386
+- speed - speeddrv + speedndis
+- mem - memory limit patch
+- creg - CPU registry cleanup on startup
+- all - all patches (default)
+
+For example apply only TLB and CPU speed patch:
+
+```
+patcher9x -select tlb,speed
+```
 
 ### Automatic mode
 Same as interactive but don't ask anything. Can be enabled with `-auto` switch and *path* to CAB files or 9x WINDOWS/SYSTEM directory needs to be specified.
@@ -104,15 +141,18 @@ Extract VMM.VXD from VMM32.VXD
 patcher9x --vxd-extract VMM32.VXD VMM.VXD
 ```
 
-Patch individual File
+Patch individual file:
 ```
-patcher9x --patch-tlb VMM.VXD
+patcher9x --patch all VMM.VXD
 ```
 
-Patch VXD archive
+Previous command tried to apply all patches and when match, it applied them. You can also be concrete about patch category, for example apply only TLB patch: 
+
 ```
-patcher9x --patch-all VMM32.VXD
+patcher9x --patch tlb VMM.VXD
 ```
+
+Argument syntax is same as for `-select` argument.
 
 ## Boot floppy
 Boot floppy now contain CD driver and few utilities to prepare system disk. If you wish run Windows Installer from boot floppy, add `/NM` switch to `setup.exe` (because of different memory manager, the setup cannot determine real RAM size). Utilities are listed in [boot/info.txt](boot/info.txt). I also included some useful drivers and utilities listed in [boot/extra.txt](boot/extra.txt).

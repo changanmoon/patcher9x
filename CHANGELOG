@@ -1,3 +1,7 @@
+0.9.90
+- (!) check CPUID before write to IA32_EFER
+- allow uninstall (-revese switch)
+
 0.9.88
 - Support for Windows for Workgroups (WFW) 3.11 (by @mcayland)
 - Included memory patch (port of PATCHMEM by rloew)

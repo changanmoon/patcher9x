@@ -651,24 +651,17 @@ static int batch_mz_strip(options_t *options, int argc, char **argv)
 	return r;
 }
 
-int batch_patch_all(options_t *options, int argc, char **argv)
+int batch_patch(options_t *options, int argc, char **argv)
 {
-	return batch_patch_sel(options, argc, argv, PATCH_CPU_SPEED_ALL | PATCH_CPU_SPEED_NDIS_ALL | PATCH_VMM_ALL);
-}
+	uint64_t patches = 0;
+	
+	if(argc == 0)
+	{
+		return -1;
+	}
 
-int batch_patch_tlb(options_t *options, int argc, char **argv)
-{
-	return batch_patch_sel(options, argc, argv, PATCH_VMM_ALL);
-}
-
-int batch_patch_cpuspeed(options_t *options, int argc, char **argv)
-{
-	return batch_patch_sel(options, argc, argv, PATCH_CPU_SPEED_ALL);
-}
-
-int batch_patch_cpuspeed_ndis(options_t *options, int argc, char **argv)
-{
-	return batch_patch_sel(options, argc, argv, PATCH_CPU_SPEED_NDIS_ALL);
+	patches = patch_select(argv[0]);
+	return batch_patch_sel(options, argc-1, argv+1, patches);
 }
 
 #include "batch.h"

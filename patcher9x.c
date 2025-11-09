@@ -86,6 +86,8 @@ static int read_arg(options_t *options, int argc, char **argv, int *batch_id, in
 	int i;
 	memset(options, 0, sizeof(options_t));
 	options->mode = MODE_INTERACTIVE;
+	options->patches = 0;
+	options->unmask = 0;
 	int unk_args = 0;
 	int unk_arg  = 0;
 	
@@ -122,29 +124,30 @@ static int read_arg(options_t *options, int argc, char **argv, int *batch_id, in
 			options->patches |= PATCH_FORCE_W4;
 			options->force_w4 = 1;
 		}
-		else if(istrcmp(arg, "-force-tlb") == 0)
+		else if(istrcmp(arg, "-select") == 0)
 		{
-			options->patches |= PATCH_VMM_ALL;
+			++i;
+			if(i >= argc)
+			{
+				fprintf(stderr, "missing argument to select\n");
+				return -1;
+			}
+			uint64_t sel = patch_select(argv[i]);
+			options->unmask = PATCHES_ALL ^ sel;
 		}
-		else if(istrcmp(arg, "-force-cpuspeed") == 0)
+		else if(istrcmp(arg, "-unselect") == 0)
 		{
-			options->patches |= PATCH_CPU_SPEED_ALL;
+			++i;
+			if(i >= argc)
+			{
+				fprintf(stderr, "missing argument to unselect\n");
+				return -1;
+			}
+			options->unmask = patch_select(argv[i]); // FIXME: check argc+1
 		}
-		else if(istrcmp(arg, "-force-cpuspeed-ndis") == 0)
+		else if(istrcmp(arg, "-reverse") == 0)
 		{
-			options->patches |= PATCH_CPU_SPEED_NDIS_ALL;
-		}
-		else if(istrcmp(arg, "-no-tlb") == 0)
-		{
-			options->unmask |= PATCH_VMM_ALL;
-		}
-		else if(istrcmp(arg, "-no-cpuspeed") == 0)
-		{
-			options->unmask |= PATCH_CPU_SPEED_ALL;
-		}
-		else if(istrcmp(arg, "-no-cpuspeed-ndis") == 0)
-		{
-			options->unmask |= PATCH_CPU_SPEED_NDIS_ALL;
+			options->patches |= PATCH_REVERSE;
 		}
 		else if(istrcmp(arg, "-no-backup") == 0)
 		{
@@ -626,7 +629,7 @@ static int run_interactive(options_t *options)
 
 	if(list != NULL)
 	{
-		cnt = files_status(list);
+		cnt = files_status(list, (options->patches & PATCH_REVERSE) != 0);
 		if(cnt > 0)
 		{
 	 		int ask_retry = 0;
@@ -637,7 +640,7 @@ static int run_interactive(options_t *options)
   			switch(ans)
   			{
   				case USER_YES:
-  					patch_success = files_commit(&list, options->no_backup);
+  					patch_success = files_commit(&list, options->no_backup, options->patches);
   					break;
   				case USER_NO:
   					files_cleanup(&list);

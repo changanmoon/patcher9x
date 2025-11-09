@@ -72,6 +72,9 @@
 /* not really apply patch, only do search for them */
 #define PATCH_DRY 0x10000000
 
+/* reverse patch process */
+#define PATCH_REVERSE 0x08000000
+
 /* TLB patch for windows 98 */
 #define PATCH_VMM98 0x00000001
 
@@ -142,18 +145,25 @@
 #define PATCH_WIN_COM             (1ULL << 42)
 
 /* sumary defs */
-#define PATCH_CPU_SPEED_ALL (PATCH_CPU_SPEED_V1|PATCH_CPU_SPEED_V2|PATCH_CPU_SPEED_V3|PATCH_CPU_SPEED_V4|\
+#define PATCHES_CPU_SPEED_DRV (PATCH_CPU_SPEED_V1|PATCH_CPU_SPEED_V2|PATCH_CPU_SPEED_V3|PATCH_CPU_SPEED_V4| \
 	PATCH_CPU_SPEED_V5|PATCH_CPU_SPEED_V6|PATCH_CPU_SPEED_V7|PATCH_CPU_SPEED_V8)
 
-#define PATCH_CPU_SPEED_NDIS_ALL (PATCH_CPU_SPEED_NDIS_V1|PATCH_CPU_SPEED_NDIS_V2|PATCH_CPU_SPEED_NDIS_V3|PATCH_CPU_SPEED_NDIS_V4)
+#define PATCHES_CPU_SPEED_NDIS (PATCH_CPU_SPEED_NDIS_V1|PATCH_CPU_SPEED_NDIS_V2|PATCH_CPU_SPEED_NDIS_V3|PATCH_CPU_SPEED_NDIS_V4)
 
-#define PATCH_VMM_ALL (PATCH_VMM98|PATCH_VMMME|PATCH_VMM98_V2| \
-	PATCH_VMM98_OLD|PATCH_VMM98_OLD_V2|PATCH_VMM98_SIMPLE|PATCH_VMM98_SIMPLE_V2| \
-	PATCH_MEM_VCACHE98|PATCH_MEM_VCACHE95|PATCH_MEM_VCACHEME|\
+#define PATCHES_CPU_SPEED (PATCHES_CPU_SPEED_DRV|PATCHES_CPU_SPEED_NDIS)
+
+#define PATCHES_TLB (PATCH_VMM98|PATCH_VMMME|PATCH_VMM98_V2| \
+	PATCH_VMM98_OLD|PATCH_VMM98_OLD_V2|PATCH_VMM98_SIMPLE|PATCH_VMM98_SIMPLE_V2)
+
+#define PATCHES_MEMPATCH (PATCH_MEM_VCACHE98|PATCH_MEM_VCACHE95|PATCH_MEM_VCACHEME| \
 	PATCH_MEM98SE_PATCHMEM|PATCH_MEM98FE_PATCHMEM| \
 	PATCH_MEM95_PATCHMEM| \
 	PATCH_MEMME_PATCHMEM|PATCH_MEMME_PATCHMEM_V2|\
 	PATCH_MEM_W3_95|PATCH_MEM_W3_98)
+
+#define PATCHES_CREG PATCH_WIN_COM
+
+#define PATCHES_ALL (PATCHES_CPU_SPEED | PATCHES_TLB | PATCHES_MEMPATCH | PATCHES_CREG)
 
 /* program modes */
 #define MODE_AUTO        1 /* automaticly determine action from path */
@@ -253,13 +263,14 @@ int patch_apply_wx(const char *srcfile, const char *dstfile, const char *tmpname
 int patch_backup_file(const char *path, int nobackup);
 int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *out_applied, uint64_t *out_exists);
 void patch_print(uint64_t patches);
+uint64_t patch_select(const char *list);
 
 /* files.c */
 pmodfiles_t files_lookup(const char *path, uint64_t global_flags, uint64_t global_unmask, uint32_t lookup_flags);
 pmodfiles_t files_apply(const char *upath, uint64_t global_flags, uint64_t global_unmask);
-int files_status(pmodfiles_t list);
+int files_status(pmodfiles_t list, int reverse);
 void files_cleanup(pmodfiles_t *plist);
-int files_commit(pmodfiles_t *plist, int nobackup);
+int files_commit(pmodfiles_t *plist, int nobackup, uint64_t patches);
 void files_print(pmodfiles_t list);
 
 /* exact.c */

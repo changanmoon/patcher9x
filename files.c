@@ -36,18 +36,18 @@ typedef struct _pfiles_t
 
 
 static pfiles_t pfiles[] = {
-	{"VMM32.VXD",    "",      PATCH_VX_PACK | PATCH_VMM_ALL | PATCH_CPU_SPEED_ALL, 0},
-	{"VMM.VXD",      "VMM32", PATCH_VX_UNPACK | PATCH_VMM_ALL, 0},
-	{"NTKERN.VXD",   "VMM32", PATCH_VX_UNPACK | PATCH_CPU_SPEED_ALL, 0},
-	{"IOS.VXD",      "VMM32", PATCH_VX_UNPACK | PATCH_CPU_SPEED_ALL, 0},
-	{"ESDI_506.PDR", "IOSUB", PATCH_CPU_SPEED_ALL, 0},
-	{"SCSIPORT.PDR", "IOSUB", PATCH_CPU_SPEED_ALL, 0},
-	{"ESDI_506.PDR", "IOSUBSYS", PATCH_CPU_SPEED_ALL, 1}, /* WIN95 */
-	{"SCSIPORT.PDR", "IOSUBSYS", PATCH_CPU_SPEED_ALL, 1}, /* WIN95 */
-	{"NDIS.VXD",     "VMM32", PATCH_CPU_SPEED_NDIS_ALL, 0},
-	{"NDIS.VXD",     "",      PATCH_CPU_SPEED_NDIS_ALL, 1},
-	{"NDIS.386",     "",      PATCH_CPU_SPEED_NDIS_ALL, 0}, /* WFW3.11 */
-	{"VCACHE.VXD",   "VMM32", PATCH_VX_UNPACK | PATCH_VMM_ALL, 0}, /* patchmem */
+	{"VMM32.VXD",    "",      PATCH_VX_PACK | PATCHES_TLB | PATCHES_MEMPATCH | PATCHES_CPU_SPEED, 0},
+	{"VMM.VXD",      "VMM32", PATCH_VX_UNPACK | PATCHES_TLB | PATCHES_MEMPATCH, 0},
+	{"NTKERN.VXD",   "VMM32", PATCH_VX_UNPACK | PATCHES_CPU_SPEED_DRV, 0},
+	{"IOS.VXD",      "VMM32", PATCH_VX_UNPACK | PATCHES_CPU_SPEED_DRV, 0},
+	{"ESDI_506.PDR", "IOSUB", PATCHES_CPU_SPEED_DRV, 0},
+	{"SCSIPORT.PDR", "IOSUB", PATCHES_CPU_SPEED_DRV, 0},
+	{"ESDI_506.PDR", "IOSUBSYS", PATCHES_CPU_SPEED_DRV, 1}, /* WIN95 */
+	{"SCSIPORT.PDR", "IOSUBSYS", PATCHES_CPU_SPEED_DRV, 1}, /* WIN95 */
+	{"NDIS.VXD",     "VMM32", PATCHES_CPU_SPEED_NDIS, 0},
+	{"NDIS.VXD",     "",      PATCHES_CPU_SPEED_NDIS, 1},
+	{"NDIS.386",     "",      PATCHES_CPU_SPEED_NDIS, 0}, /* WFW3.11 */
+	{"VCACHE.VXD",   "VMM32", PATCH_VX_UNPACK | PATCHES_MEMPATCH, 0}, /* patchmem */
 	{"win.cnf",      "",      PATCH_WIN_COM, 0}, /* win.com in CAB */
 	{"win.com",      "..",    PATCH_WIN_COM, 0}, /* win.com on WINDOWS dir or in ME CAB */
 //	{"CS3KIT.EXE",   "",      PATCH_CPU_SPEED_ALL },
@@ -204,8 +204,8 @@ pmodfiles_t files_lookup(const char *upath, uint64_t global_flags, uint64_t glob
 			dir = path;
 		}
 		
-		fname = fs_path_get(dir,   pfile->file, NULL);
-		tname = fs_path_get(dir,   pfile->file, "p9x");
+		fname = fs_path_get(dir, pfile->file, NULL);
+		tname = fs_path_get(dir, pfile->file, "p9x");
 		
 		//printf("fname: %s\n", fname);
 		
@@ -456,7 +456,7 @@ pmodfiles_t files_apply(const char *filepath, uint64_t global_flags, uint64_t gl
  N = new patches
 */
 
-int files_status(pmodfiles_t list)
+int files_status(pmodfiles_t list, int reverse)
 {
 	int files_count = 0;	
 	pmodfile_t *pmod;
@@ -474,7 +474,14 @@ int files_status(pmodfiles_t list)
 		if(pmod->applied != 0)
 		{
 			files_count++;
-			c_applied = 'N';
+			if(reverse == 0)
+			{
+				c_applied = 'N';
+			}
+			else
+			{
+				c_applied = 'R';
+			}
 		}
 		if(pmod->exists  != 0)  c_exists = 'E';
 		if((pmod->flags & L_F_CREATED) != 0)  c_created = 'C';
@@ -483,14 +490,21 @@ int files_status(pmodfiles_t list)
 	}
 	
 	printf("------------------------------------------------------------\n");
-	printf("  N - new patches to apply\n");
+	if(reverse == 0)
+	{
+		printf("  N - new patches to apply\n");
+	}
+	else
+	{
+		printf("  R - patches to revert\n");
+	}
 	printf("  C - file created (extracted)\n");
 	printf("  E - some already patches\n");
 	printf("------------------------------------------------------------\n");
 	
 	if(files_count > 0)
 	{
-		printf("  Status: new patches to apply: %d\n", files_count);
+		printf("  Status: files to modify: %d\n", files_count);
 	}
 	else
 	{
@@ -500,7 +514,7 @@ int files_status(pmodfiles_t list)
 	return files_count;
 }
 
-int files_commit(pmodfiles_t *plist, int nobackup)
+int files_commit(pmodfiles_t *plist, int nobackup, uint64_t patches)
 {
 	pmodfile_t *pmod, *pmod_clean;
 	pmodfiles_t list = *plist;
@@ -517,7 +531,7 @@ int files_commit(pmodfiles_t *plist, int nobackup)
 				ssize_t fs_new = fs_file_size(pmod->tname);
 				ssize_t fs_old = fs_file_size(pmod->fname);
 				
-				if((pmod->pfile->flags & PATCH_FORCE_W3) != 0)
+				if((pmod->pfile->flags & PATCH_FORCE_W3) != 0 || (patches & PATCH_FORCE_W3) != 0)
 				{
 					copy_done = 0; /* W3 is already W3 */
 				}

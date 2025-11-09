@@ -84,7 +84,7 @@ typedef struct _ppatch_t
 ppatch_t ppathes[] = {
 	{PATCH_VMM98,               "W98 TLB patch #1 (for SE, updated)",                        &vmm_patch_cp,              NULL},
 	{PATCH_VMM98_V2,            "W98 TLB patch #2 (for SE, Q242161, Q288430)",               &vmm_patch_v2_cp,           NULL},
-	{PATCH_VMMME,               "WinMe  TLB patch",                                          &vmm_patch_me1_cp,          NULL},
+	{PATCH_VMMME,               "Windows Me TLB patch",                                      &vmm_patch_me1_cp,          NULL},
 	/* ^ only first part, for this case is there special function */
 	{PATCH_CPU_SPEED_V1,        "CPU Speed #1 (1 000 000 LOOPs)",                            &cpuspeed_patch_v1_cp,      NULL},
 	{PATCH_CPU_SPEED_V2,        "CPU Speed #2 (2 000 000 LOOPs)",                            &cpuspeed_patch_v2_cp,      NULL},
@@ -105,7 +105,7 @@ ppatch_t ppathes[] = {
 	{PATCH_MEM_VCACHE98,        "W98 memory limit - VCACHE.VXD (rloew's patch)",             NULL,                       &vcache_v1_sp},
 	{PATCH_MEM_VCACHE95,        "W95 memory limit - VCACHE.VXD (rloew's patch)",             NULL,                       &vcache_v2_sp},
 	{PATCH_MEM_VCACHEME,        "ME memory limit - VCACHE.VXD (rloew's patch)",              NULL,                       &vcache_v3_sp},
-	{PATCH_MEM98SE_PATCHMEM,    "W98 memory limit - VMM.VXD (SE or FE+Q242161, rloew's patch)", NULL,                   &vmm98_v1_sp},
+	{PATCH_MEM98SE_PATCHMEM,    "W98 memory limit - VMM.VXD (SE or FE+Q242161, rloew's patch)", NULL,                    &vmm98_v1_sp},
 	{PATCH_MEM98FE_PATCHMEM,    "W98 memory limit - VMM.VXD (FE, rloew's patch)",            NULL,                       &vmm98_v2_sp},
 	{PATCH_MEMME_PATCHMEM,      "ME memory limit - VMM.VXD (rloew's patch)",                 NULL,                       &vmmme_v1_sp},
 	{PATCH_MEMME_PATCHMEM_V2,   "ME memory limit - VMM.VXD (Q296773, rloew's patch)",        NULL,                       &vmmme_v2_sp},
@@ -117,13 +117,31 @@ ppatch_t ppathes[] = {
 };
 
 /* special case for ME patch */
-static int patch_select_me(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists);
+static int patch_select_me(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists, int dry, int reverse);
 
 /* binary patch case */
-static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_t offset, uint32_t fs, uint64_t patch_id, const spatch_t *spatch, uint64_t *applied, uint64_t *exists, int dry);
+static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_t offset, uint32_t fs, uint64_t patch_id, const spatch_t *spatch, uint64_t *applied, uint64_t *exists, int dry, int reverse);
 
 /* special case for win.com patch */
-static int patch_select_wincom(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists, int dry_run);
+static int patch_select_wincom(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists, int dry_run, int reverse);
+
+/* create copy of file and open it for write or open the copy when other patch created one */
+static FILE *fopen_copy(FILE *fp, const char *dstfile, int *file_copied)
+{
+	FILE *fw;
+	if(*file_copied == 0)
+	{
+		fw = FOPEN_LOG(dstfile, "w+b");
+		fseek(fp, 0, SEEK_SET);
+		fs_file_copy(fp, fw, 0);
+		*file_copied = 1;
+	}
+	else
+	{
+		fw = FOPEN_LOG(dstfile, "r+b");
+	}
+	return fw;
+}
 
 /**
  * Apply selected set of patches
@@ -144,6 +162,8 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 	uint64_t applied = 0;
 	uint64_t exists  = 0;
 	int file_copied  = 0;
+	int dry_run = (to_apply & PATCH_DRY) != 0;
+	int reverse = (to_apply & PATCH_REVERSE) != 0;
 
 	for(patch = ppathes; patch->name != NULL; patch++)
 	{
@@ -153,19 +173,34 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 			
 			if(patch->id == PATCH_VMMME)
 			{
-				status = patch_select_me(fp, dstfile, &file_copied, &applied, &exists);
+				status = patch_select_me(fp, dstfile, &file_copied, &applied, &exists, dry_run, reverse);
 			}
 			else if(patch->id == PATCH_WIN_COM)
 			{
-				status = patch_select_wincom(fp, dstfile, &file_copied, &applied, &exists, to_apply & PATCH_DRY);
+				status = patch_select_wincom(fp, dstfile, &file_copied, &applied, &exists, dry_run, reverse);
 			}
 			else
 			{
 				if(patch->cpatch)
 				{
+					cpatch_t cp = *(patch->cpatch);
+					if(to_apply & PATCH_REVERSE)
+					{
+						cp.patch_data = patch->cpatch->orig_data;
+						cp.patch_size = patch->cpatch->orig_size;
+						cp.orig_data  = patch->cpatch->patch_data;
+						cp.orig_size  = patch->cpatch->patch_size;
+						
+						if(patch->id == PATCH_VMM98_OLD || patch->id == PATCH_VMM98_OLD_V2)
+						{
+							/* we need ignore patches update, because this reverse patch to old version */
+							continue;
+						}
+					}
+					
 					ssize_t pos;
 					bitstream_t bs_check, bs_patch;
-					bs_mem(&bs_check, (uint8_t*)patch->cpatch->check_data, patch->cpatch->check_size);
+					bs_mem(&bs_check, (uint8_t*)cp.check_data, cp.check_size);
 					
 					/* if already applied updated patch ignore simple version */
 					if((applied & (PATCH_VMM98 | PATCH_VMM98_V2)) != 0)
@@ -178,41 +213,29 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 					
 					fseek(fp, 0, SEEK_SET);
 					
-					pos = search_sieve_file(fp, patch->cpatch->orig_data, patch->cpatch->orig_size, &bs_check);
+					pos = search_sieve_file(fp, cp.orig_data,cp.orig_size, &bs_check);
 					if(pos >= 0)
 					{
 						applied |= patch->id;
 						
-						if((to_apply & PATCH_DRY) == 0)
+						if(!dry_run)
 						{
-							FILE *fw;
-							if(file_copied == 0)
-							{
-								fw = FOPEN_LOG(dstfile, "wb");
-								fseek(fp, 0, SEEK_SET);
-								fs_file_copy(fp, fw, 0);
-								file_copied = 1;
-							}
-							else
-							{
-								fw = FOPEN_LOG(dstfile, "r+b");
-							}
-							
+							FILE *fw = fopen_copy(fp, dstfile, &file_copied);
 							if(fw != NULL)
 							{
-								void *buf = malloc(patch->cpatch->patch_size);
+								void *buf = malloc(cp.patch_size);
 								if(buf != NULL)
 								{
 									do
 									{
 										fseek(fp, pos, SEEK_SET);
-										if(fread(buf, 1, patch->cpatch->patch_size, fp) == patch->cpatch->patch_size)
+										if(fread(buf, 1, cp.patch_size, fp) == cp.patch_size)
 										{
-											bs_mem(&bs_patch, (uint8_t*)patch->cpatch->modif_data, patch->cpatch->modif_size);
-											patch_sieve(buf, patch->cpatch->patch_data, patch->cpatch->patch_size, &bs_patch);
+											bs_mem(&bs_patch, (uint8_t*)cp.modif_data, cp.modif_size);
+											patch_sieve(buf, cp.patch_data, cp.patch_size, &bs_patch);
 								
 											fseek(fw, pos, SEEK_SET);
-											fwrite(buf, 1, patch->cpatch->patch_size, fw);				
+											fwrite(buf, 1, cp.patch_size, fw);				
 										}
 										else
 										{
@@ -221,7 +244,7 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 										
 										/* some files has to be patched more times */
 										bs_reset(&bs_check);
-										pos = search_sieve_file(fp, patch->cpatch->orig_data, patch->cpatch->orig_size, &bs_check);
+										pos = search_sieve_file(fp, cp.orig_data, cp.orig_size, &bs_check);
 										//printf("another pos: %zd\n", pos);
 										
 									} while(pos >= 0);
@@ -245,7 +268,7 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 						/* original data not found, lets assume that patch isn't applied  */
 						fseek(fp, 0, SEEK_SET);
 						bs_reset(&bs_check);
-						pos = search_sieve_file(fp, patch->cpatch->patch_data, patch->cpatch->patch_size, &bs_check);
+						pos = search_sieve_file(fp, cp.patch_data, cp.patch_size, &bs_check);
 						if(pos >= 0)
 						{
 							exists |= patch->id;
@@ -260,7 +283,7 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 					if(patch->id == PATCH_MEM_W3_95 || patch->id == PATCH_MEM_W3_98)
 					{
 						/* special case to apply on W3 archive */
-						status = spatch_apply(fp, dstfile, &file_copied, 0, 0, patch->id, patch->spatch, &applied, &exists, to_apply & PATCH_DRY);
+						status = spatch_apply(fp, dstfile, &file_copied, 0, 0, patch->id, patch->spatch, &applied, &exists, dry_run, reverse);
 					}
 					else
 					{
@@ -291,7 +314,7 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 								}
 							}
 							
-							status = spatch_apply(fp, dstfile, &file_copied, off, fs, patch->id, patch->spatch, &applied, &exists, to_apply & PATCH_DRY);
+							status = spatch_apply(fp, dstfile, &file_copied, off, fs, patch->id, patch->spatch, &applied, &exists, dry_run, reverse);
 						}
 						else /* W3 file */
 						{
@@ -312,7 +335,7 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 										file_size = w3->file_size - file_offset;
 									}
 									//printf("W3: %s at %u (%u)\n", w3->files[j].name, file_offset, file_size);
-									status = spatch_apply(fp, dstfile, &file_copied, file_offset, file_size, patch->id, patch->spatch, &applied, &exists, to_apply & PATCH_DRY);
+									status = spatch_apply(fp, dstfile, &file_copied, file_offset, file_size, patch->id, patch->spatch, &applied, &exists, dry_run, reverse);
 								}
 								pe_w3_free(w3);
 							}				
@@ -355,82 +378,96 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 
 #define SIZEOF_MAX(_a, _b) (sizeof(_a) > sizeof(_b) ? sizeof(_a) : sizeof(_b)) 
 
-static int patch_select_me(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists)
+static int patch_select_me(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists, int dry_run, int reverse)
 {
 	int status = PATCH_OK;
 	ssize_t pos_a, pos_b;
 	bitstream_t bs_check, bs_patch;
 	
 	fseek(fp, 0, SEEK_SET);
+
+	const uint8_t *me1_orig = vmm_patch_me1_orig;
+	size_t me1_orig_size = sizeof(vmm_patch_me1_orig);
+	const uint8_t *me1_new = vmm_patch_me1;
+	size_t me1_new_size = sizeof(vmm_patch_me1);
 	
+	const uint8_t *me2_orig = vmm_patch_me2_orig;
+	size_t me2_orig_size = sizeof(vmm_patch_me2_orig);
+	const uint8_t *me2_new = vmm_patch_me2;
+	size_t me2_new_size = sizeof(vmm_patch_me2);
+
+	if(reverse)
+	{
+		me1_new = vmm_patch_me1_orig;
+		me1_new_size = sizeof(vmm_patch_me1_orig);
+		me1_orig = vmm_patch_me1;
+		me1_orig_size = sizeof(vmm_patch_me1);
+
+		me2_new = vmm_patch_me2_orig;
+		me2_new_size = sizeof(vmm_patch_me2_orig);
+		me2_orig = vmm_patch_me2;
+		me2_orig_size = sizeof(vmm_patch_me2);
+	}
+
 	bs_mem(&bs_check, (uint8_t*)vmm_patch_me1_orig_check, sizeof(vmm_patch_me1_orig_check));
-	pos_a = search_sieve_file(fp, vmm_patch_me1_orig, sizeof(vmm_patch_me1_orig), &bs_check);
+	pos_a = search_sieve_file(fp, me1_orig, me1_orig_size, &bs_check);
 	
 	fseek(fp, 0, SEEK_SET);
 	
 	bs_mem(&bs_check, (uint8_t*)vmm_patch_me2_orig_check, sizeof(vmm_patch_me2_orig_check));
-	pos_b = search_sieve_file(fp, vmm_patch_me2_orig, sizeof(vmm_patch_me2_orig), &bs_check);
-		
+	pos_b = search_sieve_file(fp, me2_orig, me2_orig_size, &bs_check);
+
 	if(pos_a >= 0 && (pos_b - pos_a) == ME_BLOCK_DISTANCE)
 	{
-		FILE *fw;
-		if(*file_copied == 0)
+		if(dry_run == 0)
 		{
-			fw = FOPEN_LOG(dstfile, "wb");
-			fseek(fp, 0, SEEK_SET);
-			fs_file_copy(fp, fw, 0);
-			*file_copied = 1;
-		}
-		else
-		{
-			fw = FOPEN_LOG(dstfile, "r+b");
-		}
-
-		if(fw != NULL)
-		{
-			void *buf = malloc(SIZEOF_MAX(vmm_patch_me1, vmm_patch_me2));
-			if(buf != NULL)
+			FILE *fw = fopen_copy(fp, dstfile, file_copied);
+			if(fw != NULL)
 			{
-				fseek(fp, pos_a, SEEK_SET);
-				if(fread(buf, 1, sizeof(vmm_patch_me1), fp) == sizeof(vmm_patch_me1))
+				void *buf = malloc(SIZEOF_MAX(vmm_patch_me1, vmm_patch_me2));
+				if(buf != NULL)
 				{
-					bs_mem(&bs_patch, (uint8_t*)vmm_patch_me1_modif, sizeof(vmm_patch_me1_modif));
-					patch_sieve(buf, vmm_patch_me1, sizeof(vmm_patch_me1), &bs_patch);
-					
-					fseek(fw, pos_a, SEEK_SET);
-					fwrite(buf, 1, sizeof(vmm_patch_me1), fw);							
-				}
-				else
-				{
-					status = PATCH_E_READ;
-				}
+					fseek(fp, pos_a, SEEK_SET);
+					if(fread(buf, 1, me1_new_size, fp) == me1_new_size)
+					{
+						bs_mem(&bs_patch, (uint8_t*)vmm_patch_me1_modif, sizeof(vmm_patch_me1_modif));
+						patch_sieve(buf, me1_new, me1_new_size, &bs_patch);
 						
-				fseek(fp, pos_b, SEEK_SET);
-				if(fread(buf, 1, sizeof(vmm_patch_me2), fp) == sizeof(vmm_patch_me2))
-				{
-					bs_mem(&bs_patch, (uint8_t*)vmm_patch_me2_modif, sizeof(vmm_patch_me2_modif));
-					patch_sieve(buf, vmm_patch_me2, sizeof(vmm_patch_me2), &bs_patch);
+						fseek(fw, pos_a, SEEK_SET);
+						fwrite(buf, 1, sizeof(vmm_patch_me1), fw);							
+					}
+					else
+					{
+						status = PATCH_E_READ;
+					}
+							
+					fseek(fp, pos_b, SEEK_SET);
+					if(fread(buf, 1, me2_new_size, fp) == me2_new_size)
+					{
+						bs_mem(&bs_patch, (uint8_t*)vmm_patch_me2_modif, sizeof(vmm_patch_me2_modif));
+						patch_sieve(buf, me2_new, me2_new_size, &bs_patch);
+						
+						fseek(fw, pos_b, SEEK_SET);
+						fwrite(buf, 1, me2_new_size, fw);							
+					}
+					else
+					{
+						status = PATCH_E_READ;
+					}
 					
-					fseek(fw, pos_b, SEEK_SET);
-					fwrite(buf, 1, sizeof(vmm_patch_me2), fw);							
+					free(buf);
 				}
 				else
 				{
-					status = PATCH_E_READ;
+					status = PATCH_E_MEM;
 				}
-				
-				free(buf);
+				fclose(fw);
 			}
 			else
 			{
-				status = PATCH_E_MEM;
+				status = PATCH_E_WRITE;
 			}
-			fclose(fw);
-		}
-		else
-		{
-			status = PATCH_E_WRITE;
-		}
+		} // dry run
 		
 		if(status == PATCH_OK)
 		{
@@ -458,7 +495,7 @@ static int patch_select_me(FILE *fp, const char *dstfile, int *file_copied, uint
  * @param fs: file size of fp
  *
  **/
-static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_t offset, uint32_t fs, uint64_t patch_id, const spatch_t *spatch, uint64_t *applied, uint64_t *exists, int dry)
+static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_t offset, uint32_t fs, uint64_t patch_id, const spatch_t *spatch, uint64_t *applied, uint64_t *exists, int dry, int reverse)
 {
 	int status = PATCH_OK;
 	
@@ -511,6 +548,18 @@ static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_
 		printf("0x%llX: error size\n", patch_id);
 	}*/
 
+	if(reverse)
+	{
+		if(valid && patch_exists)
+		{
+			patch_exists = 0;
+		}
+		else
+		{
+			valid = 0;
+		}
+	}
+
 	if(valid && patch_exists)
 	{
 		(*exists) |= patch_id;
@@ -520,26 +569,21 @@ static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_
 		(*applied) |= patch_id;
 		if(!dry)
 		{
-			FILE *fw;
-			if(*file_copied == 0)
-			{
-				fw = FOPEN_LOG(dstfile, "wb");
-				fseek(fp, 0, SEEK_SET);
-				fs_file_copy(fp, fw, 0);
-				*file_copied = 1;
-			}
-			else
-			{
-				fw = FOPEN_LOG(dstfile, "r+b");
-			}
-
+			FILE *fw = fopen_copy(fp, dstfile, file_copied);
 			if(fw != NULL)
 			{
 				const spatch_data_t *pdata = spatch->data;
 				while(pdata->newdata != NULL)
 				{
 					fseek(fw, offset + pdata->offset, SEEK_SET);
-					fwrite(pdata->newdata, 1, pdata->size, fw);									
+					if(!reverse)
+					{
+						fwrite(pdata->newdata, 1, pdata->size, fw);
+					}
+					else
+					{
+						fwrite(pdata->olddata, 1, pdata->size, fw);
+					}
 					pdata++;
 				}
 				fclose(fw);
@@ -570,14 +614,102 @@ static int is_zero(uint8_t *ptr, size_t s)
 
 static uint32_t good_addrs[] = {0x4400, 0x4500, 0x4600, 0x2000, 0x800, 0};
 
+static void wincom_erasepatch(FILE *fp, FILE *fw, uint32_t code_offset, uint32_t code_size, uint8_t *buffer)
+{
+	fseek(fp, code_offset, SEEK_SET);
+	fread(buffer, 1, code_size, fp);
+
+	/* get original jump address */
+	uint16_t orig_return_offset = code_offset + code_size + COM_ORG;
+	uint16_t orig_return_adr = buffer[code_size - 2] | (((uint16_t)buffer[code_size - 1]) << 8);
+	orig_return_adr += orig_return_offset;
+
+	/* write jump IM at file begin */
+	uint16_t jmp_im = JMP_TO_INST16_OFF(orig_return_adr, COM_ORG);
+	fseek(fw, 1, SEEK_SET);
+	fwrite(&jmp_im, 2, 1, fw);
+
+	/* clear injected code */
+	memset(buffer, 0, sizeof(crfix_code));
+	fseek(fw, code_offset, SEEK_SET);
+	fwrite(buffer, sizeof(crfix_code), 1, fw);
+//	return orig_return_adr;
+}
+
+static int wincom_writepatch(FILE *rp, FILE *wp, uint8_t *test_buf)
+{
+	uint8_t data[4] = {0};
+	int rc = -1;
+
+	fseek(rp, 0, SEEK_SET);
+	fread(data, 1, 3, rp);
+	if(data[0] == X86_JMP)
+	{
+		uint32_t def_jmp = data[1] | (((uint32_t)data[2]) << 8);
+		def_jmp += 3 + COM_ORG;
+		
+		uint32_t code_offset = JMP_TO_FILEOFF(def_jmp-CRFIX_CODE_START);
+			
+		fseek(rp, code_offset, SEEK_SET);
+		//printf("check offset = %X (addr=0x%X)\n", JMP_TO_FILEOFF(def_jmp-CRFIX_CODE_START), def_jmp);
+			
+		fread(test_buf, 1, CRFIX_CHECK_BYTES+1, rp);
+		if(memcmp(crfix_code, test_buf, CRFIX_CHECK_BYTES) != 0)
+		{
+			uint32_t *test_addr;
+			for(test_addr = &good_addrs[0]; *test_addr != 0; test_addr++)
+			{
+				fseek(rp, JMP_TO_FILEOFF(*test_addr), SEEK_SET);	
+				if(fread(test_buf, 1, sizeof(crfix_code), rp) == sizeof(crfix_code))
+				{
+					if(is_zero(test_buf, sizeof(crfix_code)))
+					{
+						if(wp != NULL)
+						{
+							/* copy code block */
+							uint32_t jmp_im = JMP_TO_INST16_OFF(def_jmp, (*test_addr) + CRFIX_JMP_POS);
+
+							memcpy(test_buf, crfix_code, sizeof(crfix_code));
+
+							/* jump to original code */
+							test_buf[CRFIX_JMP_POS]   = X86_JMP;
+							test_buf[CRFIX_JMP_POS+1] = jmp_im & 0xFF;
+							test_buf[CRFIX_JMP_POS+2] = (jmp_im >> 8) & 0xFF;
+
+							/* write block */
+							fseek(wp, JMP_TO_FILEOFF(*test_addr), SEEK_SET);
+							fwrite(test_buf, 1, sizeof(crfix_code), wp);
+
+							/* jump to new code at beginning */
+							jmp_im = JMP_TO_INST16_OFF(*test_addr + CRFIX_CODE_START, COM_ORG);
+							test_buf[0] = X86_JMP;
+							test_buf[1] = jmp_im & 0xFF;
+							test_buf[2] = (jmp_im >> 8) & 0xFF;
+
+							/* write begin 3 bytes */
+							fseek(wp, 0, SEEK_SET);
+							fwrite(test_buf, 1, 3, wp);
+						} // fw
+						rc = PATCH_OK;
+						break;
+					} // is_zero
+				}
+			} // for
+		}
+	}
+
+	return rc;
+}
+
 /**
  * Apply special case for win.com patch
  *
  */
-static int patch_select_wincom(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists, int dry_run)
+static int patch_select_wincom(FILE *fp, const char *dstfile, int *file_copied, uint64_t *applied, uint64_t *exists, int dry_run, int reverse)
 {
 	int status = PATCH_OK;
 	uint8_t data[4];
+	
 	fseek(fp, 0, SEEK_SET);
 	fread(data, 1, 3, fp);
 	if(data[0] == X86_JMP)
@@ -588,74 +720,103 @@ static int patch_select_wincom(FILE *fp, const char *dstfile, int *file_copied, 
 		uint8_t *test_buf = malloc(sizeof(crfix_code));
 		if(test_buf != NULL)
 		{
-			fseek(fp, JMP_TO_FILEOFF(def_jmp-CRFIX_CODE_START), SEEK_SET);
+			uint32_t code_offset = JMP_TO_FILEOFF(def_jmp-CRFIX_CODE_START);
+			
+			fseek(fp, code_offset, SEEK_SET);
 			//printf("check offset = %X (addr=0x%X)\n", JMP_TO_FILEOFF(def_jmp-CRFIX_CODE_START), def_jmp);
 			
-			fread(test_buf, 1, CRFIX_CHECK_BYTES, fp);
-			if(memcmp(crfix_code, test_buf, CRFIX_CHECK_BYTES) != 0)
+			fread(test_buf, 1, CRFIX_CHECK_BYTES+1, fp);
+			if(memcmp(crfix_code, test_buf, CRFIX_CHECK_BYTES))
 			{
-				uint32_t *test_addr;
-				for(test_addr = &good_addrs[0]; *test_addr != 0; test_addr++)
+				if(reverse == 0)
 				{
-					fseek(fp, JMP_TO_FILEOFF(*test_addr), SEEK_SET);	
-					if(fread(test_buf, 1, sizeof(crfix_code), fp) == sizeof(crfix_code))
+					if(dry_run == 0)
 					{
-						if(is_zero(test_buf, sizeof(crfix_code)))
+						FILE *fw = fopen_copy(fp, dstfile, file_copied);
+						if(fw)
 						{
-							if(dry_run == 0)
+							if(wincom_writepatch(fp, fw, test_buf) == PATCH_OK)
 							{
-								FILE *fw = NULL;
-								if(*file_copied == 0)
-								{
-									fw = FOPEN_LOG(dstfile, "wb");
-									fseek(fp, 0, SEEK_SET);
-									fs_file_copy(fp, fw, 0);
-									*file_copied = 1;
-								}
-								else
-								{
-									fw = FOPEN_LOG(dstfile, "r+b");
-								}
-						
-								if(fw != NULL)
-								{
-									/* copy code block */
-									uint32_t jmp_im = JMP_TO_INST16_OFF(def_jmp, (*test_addr) + CRFIX_JMP_POS);
-									//printf("return jmp: %X\n", jmp_im);
-									
-									memcpy(test_buf, crfix_code, sizeof(crfix_code));
-									
-									/* jump to original code */
-									test_buf[CRFIX_JMP_POS]   = X86_JMP;
-									test_buf[CRFIX_JMP_POS+1] = jmp_im & 0xFF;
-									test_buf[CRFIX_JMP_POS+2] = (jmp_im >> 8) & 0xFF;
-
-									/* write block */
-									fseek(fw, JMP_TO_FILEOFF(*test_addr), SEEK_SET);
-									fwrite(test_buf, 1, sizeof(crfix_code), fw);
-									
-									/* jump to new code at beginning */
-									jmp_im = JMP_TO_INST16_OFF(*test_addr + CRFIX_CODE_START, COM_ORG);
-									test_buf[0]   = X86_JMP;
-									test_buf[1]   = jmp_im & 0xFF;
-									test_buf[2]   = (jmp_im >> 8) & 0xFF;
-
-									/* write begin 3 bytes */
-									fseek(fw, 0, SEEK_SET);
-									fwrite(test_buf, 1, 3, fw);
-
-									fclose(fw);
-								} // fw
+								*applied |= PATCH_WIN_COM;
 							}
-							*applied |= PATCH_WIN_COM;
-							break;
-						} // is_zero
+							fclose(fw);
+						}
 					}
-				} // for
+					else
+					{
+						if(wincom_writepatch(fp, NULL, test_buf) == PATCH_OK)
+						{
+							*applied |= PATCH_WIN_COM;
+						}
+					}
+				}
+				else
+				{
+					*exists |= PATCH_WIN_COM;
+				}
 			}
 			else
 			{
-				*exists |= PATCH_WIN_COM;
+				if(*(test_buf + CRFIX_CHECK_BYTES) == CRFIX_REV)
+				{
+					if(reverse)
+					{
+						if(dry_run == 0)
+						{
+							FILE *fw = fopen_copy(fp, dstfile, file_copied);
+							if(fw)
+							{
+								wincom_erasepatch(fp, fw, code_offset, sizeof(crfix_code), test_buf);
+								*applied |= PATCH_WIN_COM;
+								fclose(fw);
+							}
+						}
+						else
+						{
+							*applied |= PATCH_WIN_COM;
+						}
+					}
+					else
+					{
+						*exists |= PATCH_WIN_COM;
+					}
+				}
+				else if(*(test_buf + CRFIX_CHECK_BYTES) == CRFIX_REV0)
+				{
+					if(!reverse)
+					{
+						if(dry_run == 0)
+						{
+							FILE *fw = fopen_copy(fp, dstfile, file_copied);
+							if(fw)
+							{
+								wincom_erasepatch(fp, fw, code_offset, CRFIX_REV0_SIZE, test_buf);
+								if(wincom_writepatch(fw, fw, test_buf) == PATCH_OK)
+								{
+									*applied |= PATCH_WIN_COM;
+								}
+								fclose(fw);
+							}
+						}
+						else
+						{
+							*applied |= PATCH_WIN_COM;
+						}
+					}
+					else
+					{
+						FILE *fw = fopen_copy(fp, dstfile, file_copied);
+						if(fw)
+						{
+							wincom_erasepatch(fp, fw, code_offset, sizeof(crfix_code), test_buf);
+							if(wincom_writepatch(fw, fw, test_buf) == PATCH_OK)
+							{
+								*applied |= PATCH_WIN_COM;
+							}
+							fclose(fw);
+						}
+					}
+				}
 			}
 			
 			free(test_buf);
@@ -927,3 +1088,21 @@ void patch_print(uint64_t patches)
 	}
 }
 
+#define PATCH_SEP ","
+
+uint64_t patch_select(const char *list)
+{
+	uint64_t patches = 0;
+
+	if(strhastok(list, PATCH_SEP, "tlb"))        patches |= PATCHES_TLB;
+	if(strhastok(list, PATCH_SEP, "speeddrv"))   patches |= PATCHES_CPU_SPEED_DRV;
+	if(strhastok(list, PATCH_SEP, "speedndis"))  patches |= PATCHES_CPU_SPEED_NDIS;
+	if(strhastok(list, PATCH_SEP, "speed"))      patches |= PATCHES_CPU_SPEED;
+	if(strhastok(list, PATCH_SEP, "mem"))        patches |= PATCHES_MEMPATCH;
+	if(strhastok(list, PATCH_SEP, "creg"))       patches |= PATCHES_CREG;
+	if(strhastok(list, PATCH_SEP, "all"))        patches |= PATCHES_ALL;
+
+	return patches;
+}
+
+#undef PATCH_SEP
