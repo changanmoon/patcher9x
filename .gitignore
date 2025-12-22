@@ -1,5 +1,6 @@
 # dumps from original Microsoft files
 /vmm/dump*.bin
+/g4resfix/dump*.bin
 *_dump.bin
 
 #release bins

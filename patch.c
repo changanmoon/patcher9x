@@ -65,11 +65,20 @@
 #include "vmmme_patch_v2.h"
 
 #include "vmm95_patch_v1.h"
+#include "vmm95_patch_v2.h"
 
 #include "w3_patch_v1.h"
 #include "w3_patch_v2.h"
 
 #include "crfix.h"
+
+#include "g4resfix.h"
+#include "g4resfix_me.h"
+
+#include "w3_patch_16m_v1.h"
+#include "w3_patch_16m_v2.h"
+#include "w3_patch_16m_v3.h"
+#include "w3_patch_16m_v4.h"
 
 typedef struct _ppatch_t
 {
@@ -109,10 +118,17 @@ ppatch_t ppathes[] = {
 	{PATCH_MEM98FE_PATCHMEM,    "W98 memory limit - VMM.VXD (FE, rloew's patch)",            NULL,                       &vmm98_v2_sp},
 	{PATCH_MEMME_PATCHMEM,      "ME memory limit - VMM.VXD (rloew's patch)",                 NULL,                       &vmmme_v1_sp},
 	{PATCH_MEMME_PATCHMEM_V2,   "ME memory limit - VMM.VXD (Q296773, rloew's patch)",        NULL,                       &vmmme_v2_sp},
-	{PATCH_MEM95_PATCHMEM,      "W95 memory limit - VMM.VXD (rloew's patch)",                NULL,                       &vmm95_v1_sp},
+	{PATCH_MEM95_PATCHMEM,      "W95/A memory limit - VMM.VXD (rloew's patch)",              NULL,                       &vmm95_v1_sp},
+	{PATCH_MEM95B_PATCHMEM,     "W95B/C memory limit - VMM.VXD (rloew's patch)",             NULL,                       &vmm95_v2_sp},
 	{PATCH_MEM_W3_98,           "W98 memory limit - W3 loader patch (rloew's patch)",        NULL,                       &w3_v1_sp},
 	{PATCH_MEM_W3_95,           "W95 memory limit - W3 loader patch (rloew's patch)",        NULL,                       &w3_v2_sp},
 	{PATCH_WIN_COM,             "win.com - control registry cleanup",                        NULL,                       NULL},
+	{PATCH_G4RESFIX_98,         "W98 >4G resource patch",                                    &g4resfix_cp,               NULL},
+	{PATCH_G4RESFIX_ME,         "ME >4G resource patch",                                     &g4resfix_me_cp,            NULL},
+	{PATCH_MEM_W3_16M_98,       "W98 move VXD above 16M (rloew's patch)",                    NULL,                       &w3_16m_v1_sp},
+	{PATCH_MEM_W3_16M_95,       "W95/A move VXD above 16M (rloew's patch)",                  NULL,                       &w3_16m_v2_sp},
+	{PATCH_MEM_W3_16M_ME,       "ME move VXD above 16M (rloew's patch)",                     NULL,                       &w3_16m_v3_sp},
+	{PATCH_MEM_W3_16M_95B,      "W95B/W95C move VXD above 16M (rloew's patch)",              NULL,                       &w3_16m_v4_sp},
 	{0, NULL, NULL, NULL}
 };
 
@@ -279,10 +295,11 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 				{
 					/* try apply spatch normaly from file begin */
 					uint32_t fs = 0;
-	
-					if(patch->id == PATCH_MEM_W3_95 || patch->id == PATCH_MEM_W3_98)
+
+					if((patch->id & (PATCH_MEM_W3_95 | PATCH_MEM_W3_98 | PATCHES_MEM_16M)) != 0)
 					{
 						/* special case to apply on W3 archive */
+						//printf("SC %s - %llX\n", dstfile, patch->id);
 						status = spatch_apply(fp, dstfile, &file_copied, 0, 0, patch->id, patch->spatch, &applied, &exists, dry_run, reverse);
 					}
 					else
@@ -338,7 +355,7 @@ int patch_selected(FILE *fp, const char *dstfile, uint64_t to_apply, uint64_t *o
 									status = spatch_apply(fp, dstfile, &file_copied, file_offset, file_size, patch->id, patch->spatch, &applied, &exists, dry_run, reverse);
 								}
 								pe_w3_free(w3);
-							}				
+							}
 						} // W3
 					} // not yet applied
 				} // spatch
@@ -517,6 +534,7 @@ static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_
 	if((fs == 0) || (fs >= fs_min && fs <= fs_max))
 	{
 		const spatch_data_t *pdata = spatch->data;
+		int cnt = 0;
 		while(pdata->olddata != NULL)
 		{
 			fseek(fp, offset + pdata->offset, SEEK_SET);
@@ -530,16 +548,19 @@ static int spatch_apply(FILE *fp, const char *dstfile, int *file_copied, uint32_
 			{
 				if(memcmp(buf, pdata->newdata, pdata->size) != 0)
 				{
-					//printf("0x%llX: fail at: 0x%X\n", patch_id, pdata->offset);
+					//printf("0x%llX: fail offset=0x%X, block=%d\n", patch_id, pdata->offset, cnt);
 					break;
 				}
 				patch_exists = 1;
 			}
+			//printf("off: %d\n", pdata->offset);
 			pdata++;
+			cnt++;
 		}
 
 		if(pdata->olddata == NULL)
 		{
+			//printf("0x%llX: valid, exists = %d\n", patch_id, patch_exists);
 			valid = 1;
 		}
 	}
@@ -1100,7 +1121,10 @@ uint64_t patch_select(const char *list)
 	if(strhastok(list, PATCH_SEP, "speed"))      patches |= PATCHES_CPU_SPEED;
 	if(strhastok(list, PATCH_SEP, "mem"))        patches |= PATCHES_MEMPATCH;
 	if(strhastok(list, PATCH_SEP, "creg"))       patches |= PATCHES_CREG;
+	if(strhastok(list, PATCH_SEP, "g4resfix"))   patches |= PATCHES_G4RESFIX;
+	if(strhastok(list, PATCH_SEP, "16m"))        patches |= PATCHES_MEM_16M;
 	if(strhastok(list, PATCH_SEP, "all"))        patches |= PATCHES_ALL;
+	if(strhastok(list, PATCH_SEP, "default"))    patches |= PATCHES_DEFAULT;
 
 	return patches;
 }

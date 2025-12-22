@@ -1,16 +1,16 @@
 # Patch for Windows 3.11/95/98/98 SE/Me to fix CPU issues
-Virtualization of Microsoft Windows 3.11/9x systems is a bit problematic due to few major bugs:
-[TLB invalidation bug](#patch-to-fix-tlb-invalidation-bug), [CPU speed limit bug](#patch-to-fix-cpu-speed-limit-bug), [Memory Limit](#memory-limit-patch) and [Dirty control registers](#dirty-control-registry-patch).
+Virtualization of Microsoft Windows 3.11/9x systems can be problematic due to a few major bugs:
+[the TLB invalidation bug](#patch-to-fix-tlb-invalidation-bug), [the CPU speed limit bug](#patch-to-fix-cpu-speed-limit-bug), and [issues with Memory Limit](#memory-limit-patch) and [Dirty control registers](#dirty-control-registry-patch).
 
-This program contains a set of patches to fix these bugs, and can be booted from a floppy on a virtual machine. It either applies the patch to the installed system, or it patches the installation files in order to create (relatively) bug-free installation media.
+This program contains a set of patches to fix these bugs and can be booted from a floppy disk on a virtual machine. It can either apply the patch to the installed system or patch the installation files to create (relatively) bug-free installation media.
 
 ## Patch to fix TLB invalidation bug
 
-MS Windows 98 won't run on newer CPU (even in a virtual machine) due to the "TLB invalidation bug". The bug is described here: https://blog.stuffedcow.net/2015/08/win9x-tlb-invalidation-bug/
+MS Windows 98 may not run on newer CPUs (even in a virtual machine) due to the "TLB invalidation bug." The bug is described here: https://blog.stuffedcow.net/2015/08/win9x-tlb-invalidation-bug/
 
 ![Bug animation on Windows 98](/doc/shell32.gif)
 
-If you want to run a virtual machine without restriction with Windows 98 on AMD Zen 2 and newer (Ryzen 3000+) or Intel Core 11th generation and newer (code names Rocket Lake, Tiger Lake), you probably need this patch.
+If you want to run a virtual machine without restrictions with Windows 98 on AMD Zen 2 and newer (Ryzen 3000+) or Intel Core 11th generation and newer (code names Rocket Lake, Tiger Lake), you likely need this patch.
 
 ## Patch to fix CPU speed limit bug
 
@@ -26,17 +26,58 @@ patcher9x -cputest
 
 ## Memory limit patch
 
-Windows 9x cannot work with more than about ~512 MB of RAM. There is no strict barrier, but due bugs in FAT driver (`VCACHE.VXD`) more memory causes that cache won't fit to system memory space and overwriting memory of another drivers. With more memory is more change to hit something important. There also few other bugs in `VMM.VXD` loader and itself in `VMM32.VXD`.
+Windows 9x cannot reliably work with more than about ~512 MB of RAM. There's no strict barrier, but bugs in the FAT driver (`VCACHE.VXD`) cause more memory to result in the cache not fitting into system memory space, overwriting the memory of other drivers. With more RAM, the chance of hitting something important increases. There are also a few other bugs in `VMM.VXD` loader and itself in `VMM32.VXD`.
 
 ![More RAM than system handle](/doc/memory.gif)
 
-Normally 512 MB of RAM is enough on old hardware, but due to design of virtual machine GPU adapters we need at least 1 GB of RAM for 3D acceleration to work properly. Second problem when we want run Windows 9X on bare metal on newer computers - we can't just reduce memory, because there no smaller RAM modules.
+Normally, 512 MB of RAM is enough for old hardware, but due to the design of virtual machine GPU adapters, we need at least 1 GB of RAM for 3D acceleration to work properly. A second problem when we want to run Windows 9x on bare metal on newer computers is that we can’t just reduce the memory, because smaller RAM modules aren't available.
 
-This patch is simple integration of [Rudolph Loew's PATCHMEM](http://lonecrusader.x10host.com/rloew/patchmem.html).
+This patch is a simple integration of [Rudolph Loew's PATCHMEM](http://lonecrusader.x10host.com/rloew/patchmem.html).
+
+### Load VXD above 16 MB
+
+Some drivers need free space in the first 16 MB, and the system itself uses space there for memory tables. Increasing RAM won't help here because more memory means larger tables, resulting in less free space. This patch frees some space below 16 MB by loading drivers above that point. This patch isn't enabled by default, and you can include it with this command:
+
+```
+patcher9x -select default,16m
+```
+
+(or from DOS)
+
+```
+patch9x -select default,16m
+```
+
+Or can also use the shorter equivalent (and *PATCHMEM* compatibility):
+
+```
+patcher9x -m
+```
+
+If you wish to apply only this patch (you already have other patches installed):
+
+```
+patcher9x -select 16m
+```
+
+If you wish to uninstall this (only this) patch:
+
+```
+patcher9x -reverse -select 16m
+```
+
+[More information is in the PATCHMEM manual](/doc/patchmem-manual.txt)
 
 ## Dirty control registry patch
 
 Some BIOSes do not sufficiently reset the CPU control registers (CR0, CR2-CR4) and MSR registers. This can lead to "protection error" message on system load. Patch works same way as [CREGFIX](https://github.com/mintsuki/cregfix), but it is integrated to `win.com`. This is of course works only when system is loaded from the Real mode, when you're using DOS memory manager it is very dangerous to simply reset control registers, so when `win.com` is loaded in V86 mode, patch doesn't touch anything. When using memory manager you need to run original `cregfix.com` before load of memory manager.
+
+## 4G Resource patch
+
+When the system queries for reserved memory space, it assumes that results from BIOS calls (`EAX=0E820h; INT 15h`) are sorted. It also stops when it reaches a region with an address larger than 32 bits (>4 GB). Due to a "nobody cares" bug, results from many BIOSes are not sorted. When the system reaches a region > 32-bit address, it stops processing the results and ignores all following regions. This can cause some I/O space to be used as regular RAM, and writes to this location are likely to be disastrous.
+
+This patch fixes the stop at the >32-bit region address. The original patch was made by [SweetLow](https://github.com/LordOfMice/Tools/) and the
+[problem is described here](https://msfn.org/board/topic/186768-bug-fix-vmmvxd-on-handling-4gib-addresses-and-description-of-problems-with-resource-manager-on-newer-bioses/).
 
 ## Requirements
 
@@ -59,6 +100,7 @@ Some updates install newer version of some files, for example `VMM.VXD`: Q242161
 ## Updating
 
 Download newest version and run it. Program automatically determine when needs  to replace patches with newer ones. Currently there are following updates:
+- 0.9.91: added 4G Resource patch, support above 16M load, fix missing parts in memory patch for W95
 - 0.9.90: updated Dirty control registry patch (required for every 32 bit only CPU)
 - 0.8.50: updated Windows 98/98 SE TLB patch (stability)
 

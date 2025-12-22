@@ -52,6 +52,9 @@
 #include "fasmdiff_old.h"
 #include "fasmdiff_old_v2.h"
 
+#include "../g4resfix/g4resfix_diff.h"
+#include "../g4resfix/g4resfix_me_diff.h"
+
 #define PREFIX_MAX 255
 
 const char *h_header = \
@@ -91,6 +94,9 @@ preset_t presets[] = {
 	
 	{"98_simple",    "vmm/dump.bin",    "vmm/original_simple.bin",    "vmm/patched_simple.bin",    "vmm/reloc_simple.bin",    vmm_fasmdiff,    sizeof(vmm_fasmdiff)},
 	{"98_simple_v2", "vmm/dump_v2.bin", "vmm/original_simple_v2.bin", "vmm/patched_simple_v2.bin", "vmm/reloc_simple_v2.bin", vmm_fasmdiff_v2, sizeof(vmm_fasmdiff_v2)},
+	
+	{"g4resfix",    "g4resfix/dump.bin",    "g4resfix/original.bin",    "g4resfix/patched.bin",    "g4resfix/reloc.bin",    vmm_g4resfix_diff,    sizeof(vmm_g4resfix_diff)},
+	{"g4resfix_me", "g4resfix/dump_me.bin", "g4resfix/original_me.bin", "g4resfix/patched_me.bin", "g4resfix/reloc_me.bin", vmm_g4resfix_me_diff, sizeof(vmm_g4resfix_me_diff)},
 
 	PRESENT("cpuspeed", speed_v1),
 	PRESENT("cpuspeed", speed_v2),

@@ -60,6 +60,7 @@ static const char HELP_NAME[] = "Patch for Windows 3.11/9x for run on newest CPU
 #endif
 	"\t-auto,-y: use default actions (if path given) and don't bother user\n"
 	"\t-no-backup: don't backup files before modify\n"
+	"\t-m: include patch to move VXD above 16 MB\n"
 #ifndef HELP_SHORT
 	"\t-force-w3: when patching VMM32.VXD, leave it as W3 file\n"
 	"\t-force-w4: when patching VMM32.VXD, always compress to W4 file\n"
@@ -70,7 +71,10 @@ static const char HELP_NAME[] = "Patch for Windows 3.11/9x for run on newest CPU
 	"\t\tspeed - speeddrv + speedndis\n"
 	"\t\tmem - memory limit patch\n"
 	"\t\tcreg - CPU registry cleanup on startup\n"
-	"\t\tall - all patches (default)\n"
+	"\t\tg4resfix - >4G resource fix\n"
+	"\t\t16m - move VXD above 16MB (disabled by defautl)\n"
+	"\t\tdefault - default patch set\n"
+	"\t\tall - all patches\n"
 	"\t-unselect: comma separated patches (reversing -select)\n"
 	"\t-reverse: uninstall patches\n"
 	"\t-millennium: ignored, Me patch is included in TLB set\n"

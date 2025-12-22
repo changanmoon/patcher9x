@@ -87,7 +87,7 @@ static int read_arg(options_t *options, int argc, char **argv, int *batch_id, in
 	memset(options, 0, sizeof(options_t));
 	options->mode = MODE_INTERACTIVE;
 	options->patches = 0;
-	options->unmask = 0;
+	options->unmask = PATCHES_DEFAULT ^ PATCHES_ALL;
 	int unk_args = 0;
 	int unk_arg  = 0;
 	
@@ -168,6 +168,10 @@ static int read_arg(options_t *options, int argc, char **argv, int *batch_id, in
 			{
 				options->mode = MODE_AUTO;
 			}
+		}
+		else if(istrcmp(arg, "-m") == 0)
+		{
+			options->unmask &= ~((uint64_t)PATCHES_MEM_16M);
 		}
 		else if(batch_arg(arg) >= 0)
 		{

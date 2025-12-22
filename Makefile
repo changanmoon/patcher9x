@@ -489,21 +489,56 @@ cpuspeed/speedndis_v4_diff.h: cpuspeed/speedndis_v4_dump.bin cpuspeed/speedndis_
 cpuspeed_ndis_patch_v4.h: cpuspeed/speedndis_v4.bin cpuspeed/speedndis_v4_orig.bin cpuspeed/speedndis_v4_reloc.bin makepatch$(HOST_SUFIX)
 	$(RUNPATH)makepatch$(HOST_SUFIX) speedndis_v4 cpuspeed_ndis_patch_v4 113 0 113 $@
 
+########## 4G resource patch
+
+g4resfix/patched.asm.gen: g4resfix/g4resfix.asm
+	$(CPP) -nostdinc -E -P $< -o $@
+
+g4resfix/original.asm.gen: g4resfix/g4resfix.asm
+	$(CPP) -nostdinc -E -P -Doriginalcode $< -o $@
+
+g4resfix/reloc.asm.gen: g4resfix/g4resfix.asm
+	$(CPP) -nostdinc -E -P -Doriginalcode -Drelocate $< -o $@
+
+g4resfix/patched_me.asm.gen: g4resfix/g4resfix.asm
+	$(CPP) -nostdinc -E -P -DME $< -o $@
+
+g4resfix/original_me.asm.gen: g4resfix/g4resfix.asm
+	$(CPP) -nostdinc -E -P -DME -Doriginalcode $< -o $@
+
+g4resfix/reloc_me.asm.gen: g4resfix/g4resfix.asm
+	$(CPP) -nostdinc -E -P -DME -Doriginalcode -Drelocate $< -o $@
+
+g4resfix.h: g4resfix/patched.bin g4resfix/original.bin g4resfix/reloc.bin makepatch$(HOST_SUFIX)
+	$(RUNPATH)makepatch$(HOST_SUFIX) g4resfix g4resfix 210 0 210 $@
+
+g4resfix_me.h: g4resfix/patched_me.bin g4resfix/original_me.bin g4resfix/reloc_me.bin makepatch$(HOST_SUFIX)
+	$(RUNPATH)makepatch$(HOST_SUFIX) g4resfix_me g4resfix_me 205 0 205 $@
+
+g4resfix/g4resfix_diff.h: g4resfix/dump.bin g4resfix/original.bin makediff$(HOST_SUFIX)
+	$(RUNPATH)makediff$(HOST_SUFIX) g4resfix_diff $@ g4resfix/dump.bin g4resfix/original.bin
+
+g4resfix/g4resfix_me_diff.h: g4resfix/dump_me.bin g4resfix/original_me.bin makediff$(HOST_SUFIX)
+	$(RUNPATH)makediff$(HOST_SUFIX) g4resfix_me_diff $@ g4resfix/dump_me.bin g4resfix/original_me.bin
+
+### patch.c deps
+
 patch.g.o: vmm_patch.h vmm_patch_v2.h vmm_patch_me1.h vmm_patch_me2.h cpuspeed_ndis_patch_v1.h cpuspeed_ndis_patch_v2.h cpuspeed_ndis_patch_v3.h cpuspeed_ndis_patch_v4.h \
   cpuspeed_patch_v1.h cpuspeed_patch_v2.h cpuspeed_patch_v3.h cpuspeed_patch_v4.h cpuspeed_patch_v5.h cpuspeed_patch_v6.h cpuspeed_patch_v7.h cpuspeed_patch_v8.h \
-  vmm_patch_old.h vmm_patch_old_v2.h vmm_patch_simple.h vmm_patch_simple_v2.h
+  vmm_patch_old.h vmm_patch_old_v2.h vmm_patch_simple.h vmm_patch_simple_v2.h g4resfix.h g4resfix_me.h
 
 fasmdiff: vmm/fasmdiff.h vmm/fasmdiff_v2.h vmm/fasmdiff_me.h \
   cpuspeed/speed_v1_diff.h cpuspeed/speed_v2_diff.h cpuspeed/speed_v3_diff.h cpuspeed/speed_v4_diff.h \
   cpuspeed/speedndis_v1_diff.h cpuspeed/speedndis_v2_diff.h cpuspeed/speedndis_v3_diff.h cpuspeed/speedndis_v4_diff.h \
   cpuspeed/speed_v5_diff.h cpuspeed/speed_v6_diff.h cpuspeed/speed_v7_diff.h cpuspeed/speed_v8_diff.h \
-  vmm/fasmdiff_old.h vmm/fasmdiff_old_v2.h
+  vmm/fasmdiff_old.h vmm/fasmdiff_old_v2.h g4resfix/g4resfix_diff.h g4resfix/g4resfix_me_diff.h
 
 soliddiff: rloew/vcache_patch_v1.h rloew/vcache_patch_v2.h rloew/vcache_patch_v3.h \
   rloew/vmm98_patch_v1.h rloew/vmm98_patch_v2.h \
   rloew/vmmme_patch_v1.h rloew/vmmme_patch_v2.h \
-  rloew/vmm95_patch_v1.h \
-  rloew/w3_patch_v1.h rloew/w3_patch_v2.h
+  rloew/vmm95_patch_v1.h rloew/vmm95_patch_v2.h \
+  rloew/w3_patch_v1.h rloew/w3_patch_v2.h \
+  rloew/w3_patch_16m_v1.h rloew/w3_patch_16m_v2.h rloew/w3_patch_16m_v3.h rloew/w3_patch_16m_v4.h
 
 rloew/vcache_patch_v1.h: bindiff$(HOST_SUFIX)
 	$(RUNPATH)bindiff$(HOST_SUFIX) vcache_v1 rloew/dump/vcache98.org rloew/dump/vcache98.fix $@
@@ -524,7 +559,10 @@ rloew/vmm98_patch_v2.h: bindiff$(HOST_SUFIX)
 
 # 95
 rloew/vmm95_patch_v1.h: bindiff$(HOST_SUFIX)
-	$(RUNPATH)bindiff$(HOST_SUFIX) vmm95_v1 rloew/dump/vmm95.org rloew/dump/vmm95.fix $@
+	$(RUNPATH)bindiff$(HOST_SUFIX) vmm95_v1 rloew/dump/vmm95_0.org rloew/dump/vmm95_0.fix $@
+
+rloew/vmm95_patch_v2.h: bindiff$(HOST_SUFIX)
+	$(RUNPATH)bindiff$(HOST_SUFIX) vmm95_v2 rloew/dump/vmm95_b.org rloew/dump/vmm95_b.fix $@
 
 # ME
 rloew/vmmme_patch_v1.h: bindiff$(HOST_SUFIX)
@@ -541,6 +579,22 @@ rloew/w3_patch_v1.h: bindiff$(HOST_SUFIX)
 # 95 W3 loader patch
 rloew/w3_patch_v2.h: bindiff$(HOST_SUFIX)
 	$(RUNPATH)bindiff$(HOST_SUFIX) w3_v2 rloew/dump/w3_95.org rloew/dump/w3_95.fix $@
+
+# 98 W3 loader to 16M
+rloew/w3_patch_16m_v1.h: bindiff$(HOST_SUFIX)
+	$(RUNPATH)bindiff$(HOST_SUFIX) w3_16m_v1 rloew/dump/w3_98.fix rloew/dump/w3_98.m16 $@ 65504
+
+# 95 W3 loader to 16M
+rloew/w3_patch_16m_v2.h: bindiff$(HOST_SUFIX)
+	$(RUNPATH)bindiff$(HOST_SUFIX) w3_16m_v2 rloew/dump/w3_95.fix rloew/dump/w3_95.m16 $@ 81904
+
+# 95 W3 loader to 16M
+rloew/w3_patch_16m_v3.h: bindiff$(HOST_SUFIX)
+	$(RUNPATH)bindiff$(HOST_SUFIX) w3_16m_v3 rloew/dump/w3_me.org rloew/dump/w3_me.m16 $@ 53232
+
+# 95B W3 loader to 16M
+rloew/w3_patch_16m_v4.h: bindiff$(HOST_SUFIX)
+	$(RUNPATH)bindiff$(HOST_SUFIX) w3_16m_v4 rloew/dump/w3_95b.fix rloew/dump/w3_95b.m16 $@ 81904
 
 doscross$(HOST_SUFIX): builder/doscross.c version.h help.h batch.h
 	@$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_LDFLAGS)

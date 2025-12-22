@@ -1,0 +1,1 @@
+Search for 6A006A14CD20A9000100 (HEX) for beginning and folow to next C3 byte (RET inst.), it's 210 bytes on Win98 or 205 bytes on WinME
